@@ -30,30 +30,24 @@ export function useCommands(): Command[] {
 
 export async function runBuild() {
   const { BuildOrchestrator } = await import('../lib/bundler')
-  const { generatePreviewHtml, fileBlobUrl } = await import('../lib/preview')
+  const { generatePreviewHtml } = await import('../lib/preview')
   const p = getState().project
   if (!p) return
   const orchestrator = ((window as unknown as Record<string, unknown>).__forgeOrchestrator ??= new BuildOrchestrator()) as InstanceType<typeof BuildOrchestrator>
   actions.setBuilding(true)
   const files = Object.fromEntries(p.files.map(f => [f.path, f.content]))
   const result = await orchestrator.build(files)
-  const previousUrls = getState().blobUrls
-  for (const u of Object.values(previousUrls)) if (u) URL.revokeObjectURL(u)
-  let urls: { js?: string; css?: string } = {}
-  const hadError = result.diagnostics.some(d => d.severity === 'error')
-  if (result.js) {
-    urls.js = fileBlobUrl(result.js, 'bundle.js')
-    const prevHtml = generatePreviewHtml(p, result, urls)
-    actions.setBuildResult(result, { js: urls.js, css: urls.css })
+  if (result.js && result.html) {
+    const prevHtml = generatePreviewHtml(p, result)
+    actions.setBuildResult(result, {})
     actions.setStatus({ previewHtml: prevHtml, previewKey: getState().previewKey })
   } else {
     // failed build: keep the last successful preview on screen, surface diagnostics
-    actions.setBuildResult(result, previousUrls)
-    const current = getState()
-    if (!hadError && current.previewHtml) {
-      // esbuild returned nothing without errors — nothing to run yet
-      if (!current.previewHtml) actions.setBuildResult({ ...result, ok: false }, previousUrls)
+    actions.setBuildResult(result, getState().blobUrls)
+    for (const d of result.diagnostics.filter(x => x.severity === 'error').slice(0, 10)) {
+      actions.pushConsole({ kind: 'error', text: `${d.path || '<build>'}:${d.line}:${d.column} ${d.text}` })
     }
+    if (result.diagnostics.length === 0) actions.pushConsole({ kind: 'error', text: 'Build produced no JavaScript output' })
   }
 }
 

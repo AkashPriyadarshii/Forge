@@ -27,6 +27,7 @@ export interface BuildResult {
   ok: boolean
   js: string | null // bundled main module
   css: string | null // bundled css
+  html: string | null // entry HTML with local script/link references stripped
   diagnostics: BuildDiagnostic[]
 }
 

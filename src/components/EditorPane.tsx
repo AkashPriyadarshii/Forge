@@ -92,18 +92,19 @@ export function EditorPane() {
     [activePath, lintSource],
   )
 
+  // Swap states only on tab change (or external doc change): recreating the
+  // view per keystroke would destroy focus and selection mid-edit.
   useEffect(() => {
     const host = viewHost.current
     if (!host || activePath === null) return
     const cached = states.current.get(activePath)
-    const fresh = cached && cached.doc.toString() === savedDoc ? cached : EditorState.create({ doc: savedDoc, extensions })
+    const fresh = cached && cached.doc.toString() === docRef.current ? cached : EditorState.create({ doc: docRef.current, extensions })
     const view = new EditorView({ state: fresh, parent: host })
     return () => {
       states.current.set(activePath, view.state)
       view.destroy()
     }
-    // states rebuild when the file switches or the document changes under us
-  }, [activePath, savedDoc, extensions, diagnosticsVersion])
+  }, [activePath, extensions])
   void diagnosticsVersion // lint re-runs on new build results
 
 

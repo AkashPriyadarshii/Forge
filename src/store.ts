@@ -120,19 +120,20 @@ export const actions = {
   setAutoRun(b: boolean) { set({ autoRun: b }) },
   // Boot: restore most-recent project from IndexedDB (undefined if none).
   async init(): Promise<Project | undefined> {
+    const seedOrOpen = (p: Project) => {
+      set({ project: p, tabs: p.files.map(f => f.path), activePath: p.files[0]?.path ?? null, status: 'ready' })
+      void navigator.storage?.persist?.().catch(() => {})
+      return p
+    }
     try {
       const all = await projectStore.list()
-      if (all.length === 0) return undefined
       const latest = all.sort((a, b) => b.updatedAt - a.updatedAt)[0]
+      if (!latest) return seedOrOpen(defaultProject('untitled')) // first visit: seed the hello project
       const p = await projectStore.get(latest.id)
-      if (p) {
-        set({ project: p, tabs: p.files.map(f => f.path), activePath: p.files[0]?.path ?? null })
-        void navigator.storage?.persist?.().catch(() => {})
-      }
-      return p
+      return p ? seedOrOpen(p) : seedOrOpen(defaultProject('untitled'))
     } catch (err) {
       console.warn('Forge: storage unavailable, starting fresh', err)
-      return undefined
+      return seedOrOpen(defaultProject('untitled'))
     }
   },
 }

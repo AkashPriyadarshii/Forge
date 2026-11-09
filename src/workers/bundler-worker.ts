@@ -6,8 +6,8 @@ import { resolveRelative } from '../lib/paths'
 // esbuild-wasm is loaded once from a self-hosted public/wasm/esbuild.wasm (no CDN dependency).
 
 let ready: Promise<void> | null = null
-function ensure() {
-  ready ??= initialize({ wasmURL: new URL('/wasm/esbuild.wasm', self.location.href).href, worker: false })
+function init(wasmUrl: string) {
+  ready ??= initialize({ wasmURL: wasmUrl, worker: false })
   return ready
 }
 
@@ -22,9 +22,10 @@ function resolveExt(path: string): string {
  * strip them, build the JS graph (and CSS), and return rewritten HTML.
  */
 async function buildProject(
+  wasmUrl: string,
   filesIn: Record<string, string>,
 ): Promise<BuildResult> {
-  await ensure()
+  await init(wasmUrl)
   const files: Record<string, string> = { ...filesIn }
   const html = files['index.html'] ?? ''
   const diagnostics: BuildDiagnostic[] = []
@@ -32,7 +33,7 @@ async function buildProject(
   // Local references in HTML: <script src="x.js"> and <link rel stylesheet href="x.css">
   const scripts: string[] = []
   const links: string[] = []
-  void html
+  const strippedHtml = html
     .replace(/<script(?=[^>]*\bsrc\s*=\s*["'])([^>]*)><\/script>/gi, (tag, attrs) => {
       const m = /src\s*=\s*["']([^"']+)["']/.exec(attrs)!
       const src = m[1]
@@ -128,7 +129,7 @@ async function buildProject(
   for (const s of scripts) if (files[s] === undefined) {
     diagnostics.push({ path: s, line: 1, column: 1, text: `Entry script not found: ${s}`, severity: 'error' })
   }
-  return { ok: diagnostics.filter(d => d.severity === 'error').length === 0 && js !== null, js, css, diagnostics }
+  return { ok: diagnostics.filter(d => d.severity === 'error').length === 0 && js !== null, js, css, html: strippedHtml, diagnostics }
 }
 
 // esbuild bundles @import'ed css into a separate .css output file.
@@ -138,8 +139,8 @@ function collectImportedCss(outputFiles: { path: string; text: string }[] | unde
 }
 
 self.onmessage = async (e: MessageEvent) => {
-  const { id, files } = e.data as { id: number; files: Record<string, string> }
-  const result = await buildProject(files)
-    .catch(err => ({ ok: false, js: null, css: null, diagnostics: [{ path: '', line: 0, column: 0, text: String(err), severity: 'error' as const }] }))
-  ;(self as unknown as Worker).postMessage({ id, result })
+  const d = e.data as { id?: number; wasmUrl?: string; files?: Record<string, string> }
+  const result = await buildProject(d.wasmUrl ?? new URL('wasm/esbuild.wasm', location.origin + location.pathname).href, d.files ?? {})
+    .catch(err => ({ ok: false, js: null, css: null, html: null, diagnostics: [{ path: '', line: 0, column: 0, text: String(err), severity: 'error' as const }] }))
+  ;(self as unknown as Worker).postMessage({ id: d.id, result })
 }

@@ -11,6 +11,10 @@ export class BuildOrchestrator {
 
   constructor() {
     this.worker = new Worker(new URL('../workers/bundler-worker.ts', import.meta.url), { type: 'module' })
+    // esbuild-wasm is served from <base>/wasm/ (dev root, prod dist); BASE_URL keeps dev/prod correct
+    const wasmUrl = new URL('wasm/esbuild.wasm', location.origin + import.meta.env.BASE_URL).href
+    this.worker.onerror = e => { console.error('[forge] worker error:', e.message || e); this.busy = false; for (const d of this.waiters.splice(0)) d({ ok: false, js: null, css: null, html: null, diagnostics: [{ path: '', line: 0, column: 0, text: 'worker crashed: ' + (e.message || 'unknown'), severity: 'error' }] }) }
+    this.worker.postMessage({ wasmUrl })
     this.worker.onmessage = (e: MessageEvent<{ result: BuildResult }>) => {
       this.busy = false
       const deliver = this.waiters

@@ -14,7 +14,7 @@ const CONSOLE_SHIM = `<script>
       for (var i = 0; i < arguments.length; i++) {
         var a = arguments[i]
         try {
-          parts.push(typeof a === 'string' ? a : JSON.stringify(a, function (k, v) { return v instanceof Error ? String(v) : v }))
+          parts.push(typeof a === 'string' ? a : JSON.stringify(a))
         } catch (e) { parts.push(String(a)) }
       }
       send({ forge: 'console', kind: level, text: parts.join(' ') })
@@ -61,29 +61,35 @@ type ImportMap = { imports: Record<string, string> }
  * Generates the sandboxed preview document. User scripts are stripped by the
  * bundler (see bundler-worker) — bundled blobs are injected after </head> so
  * the original user markup executes unmodified apart from asset URLs.
+ *
+ * The bundle is INLINED: sandboxed iframes run in an opaque origin which cannot
+ * fetch the parent origin's blob URLs, so injection into srcdoc is the only way.
  */
-export function generatePreviewHtml(project: Project, build: BuildResult, urls: { js?: string; css?: string }): string {
-  const html = project.files.find(f => f.path === 'index.html')?.content ?? '<!doctype html><title>Forge preview</title>'
+export function generatePreviewHtml(project: Project, build: BuildResult): string {
+  // build.html carries the entry markup with local script/link refs stripped;
+  // fall back to raw entry for projects without a bundler pass
+  const html = build.html ?? project.files.find(f => f.path === 'index.html')?.content ?? '<!doctype html><title>Forge preview</title>'
   const importMap: ImportMap | null = build.js
     ? bareImports(build.js)
     : null
   const importsJson = importMap && Object.keys(importMap.imports).length
     ? `<script type="importmap">${JSON.stringify(importMap)}</script>`
     : ''
-  const cssTag = urls.css && urls.css.length ? `<link rel="stylesheet" href="${urls.css}">` : ''
-  const jsTag = urls.js ? `<script type="module" src="${urls.js}"></script>` : ''
   const lastHead = /<\/head>/i.test(html) ? html.indexOf('</head>') : html.length
   return (
     html.slice(0, lastHead) +
     CONSOLE_SHIM +
     importsJson +
     (build.css ? `<style>${escapeCss(build.css)}</style>` : '') +
-    cssTag +
-    jsTag +
+    (build.js ? `<script type="module">${escapeJs(build.js)}<` + '/script>' : '') +
     html.slice(lastHead)
   )
 }
 
 function escapeCss(css: string): string {
   return css.replace(/<\/style/gi, '<\\/style')
+}
+
+function escapeJs(js: string): string {
+  return js.replace(/<\/script/gi, '<\\/script')
 }
