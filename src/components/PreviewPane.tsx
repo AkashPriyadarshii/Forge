@@ -28,7 +28,7 @@ export function PreviewPane() {
         title="Forge live preview"
         className="w-full h-full border-0 bg-white"
         sandbox="allow-scripts allow-forms allow-pointer-lock"
-        allow="modal"
+        allow="clipboard-write"
       />
     </div>
   )
