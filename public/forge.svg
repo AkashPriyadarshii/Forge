@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0e1114"/>
+  <path d="M296 64 224 64 168 224 128 336 128 320 224 320 224 256 296 256 264 336 168 336 152 384 248 384 296 448 360 448 272 224 320 224 352 144 472 144 408 320 480 320 480 112 256 64" fill="none"/>
+  <text x="256" y="340" font-family="Georgia, serif" font-size="220" font-weight="bold" fill="#d9a046" text-anchor="middle">F</text>
+</svg>

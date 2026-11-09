@@ -6,6 +6,38 @@ import { ConsolePane, useConsoleListener } from './components/ConsolePane'
 import { PreviewPane } from './components/PreviewPane'
 import { runBuild, useCommands, type Command } from './components/commands'
 
+// persisted layout: sidebar width / editor share / console height
+const LAYOUT_KEY = 'forge:layout'
+function loadLayout() {
+  try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') } catch { return {} }
+}
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+
+function VResizer({ size, onDrag }: { size: number; onDrag: (e: React.PointerEvent) => void }) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-valuenow={size}
+      onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); onDrag(e) }}
+      onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) onDrag(e) }}
+      className="w-1 cursor-col-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors shrink-0"
+    />
+  )
+}
+
+function HResizer({ onDrag }: { onDrag: (e: React.PointerEvent) => void }) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); onDrag(e) }}
+      onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) onDrag(e) }}
+      className="h-1 cursor-row-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors"
+    />
+  )
+}
+
 function useAutoRun() {
   const project = useStore(s => s.project)
   const autoRun = useStore(s => s.autoRun)
@@ -81,6 +113,13 @@ export function App() {
   const building = useStore(s => s.building)
   const autoRun = useStore(s => s.autoRun)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const lay0 = useRef(loadLayout()).current
+  const [sidebarW, setSidebarW] = useState<number>(lay0.sidebarW ?? 176)
+  const [editorFrac, setEditorFrac] = useState<number>(lay0.editorFrac ?? 0.5)
+  const [consoleH, setConsoleH] = useState<number>(lay0.consoleH ?? 176)
+  useEffect(() => {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarW, editorFrac, consoleH }))
+  }, [sidebarW, editorFrac, consoleH])
   useConsoleListener(true)
   useAutoRun()
 
@@ -169,11 +208,12 @@ export function App() {
         </button>
       </header>
       <div className="flex-1 flex min-h-0">
-        <aside className="w-48 border-r border-[#1c2026] bg-[#0e1114] hidden md:block">
+        <aside className="border-r border-[#1c2026] bg-[#0e1114] hidden md:flex flex-col shrink-0 overflow-hidden" style={{ width: clamp(sidebarW, 140, 360) }}>
           <FileTree />
         </aside>
+        <VResizer size={sidebarW} onDrag={e => setSidebarW(clamp(sidebarW + e.movementX, 140, 360))} />
         <main className="flex-1 flex min-w-0">
-          <section className="flex-1 min-w-0 border-r border-[#1c2026] flex flex-col">
+          <section className="min-w-0 border-r border-[#1c2026] flex flex-col" style={{ flexBasis: `${clamp(editorFrac, 0.25, 0.8) * 100}%` }}>
             <div className="flex items-center border-b border-[#1c2026] bg-[#0e1114] overflow-x-auto">
               {tabs.map(t => (
                 <div
@@ -196,9 +236,18 @@ export function App() {
               <EditorPane />
             </div>
           </section>
-          <section className="flex-1 min-w-0 grid grid-rows-[1fr_auto]">
+          <VResizer size={Math.round(editorFrac * 100)} onDrag={e => {
+            // React nulls synthetic event.currentTarget after dispatch; capture width now
+            const w = e.currentTarget.parentElement!.clientWidth
+            const dx = e.movementX
+            setEditorFrac(f => clamp(f + dx / w, 0.25, 0.8))
+          }} />
+          <section className="flex-1 min-w-0 grid" style={{ gridTemplateRows: '1fr auto' }}>
             <div className="min-h-0"><PreviewPane /></div>
-            <div className="h-48 border-t border-[#1c2026]"><ConsolePane /></div>
+            <HResizer onDrag={e => setConsoleH(h => clamp(h - e.movementY, 100, 420))} />
+            <div className="border-t border-[#1c2026]" style={{ height: clamp(consoleH, 100, 420) }}>
+              <ConsolePane />
+            </div>
           </section>
         </main>
       </div>
