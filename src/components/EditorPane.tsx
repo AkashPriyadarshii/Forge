@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view'
-import { EditorState, type Extension } from '@codemirror/state'
+import { EditorState, EditorSelection, type Extension } from '@codemirror/state'
 import { indentWithTab, history, defaultKeymap, historyKeymap } from '@codemirror/commands'
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
 import { javascript } from '@codemirror/lang-javascript'
 import { html as htmlLang } from '@codemirror/lang-html'
 import { css as cssLang } from '@codemirror/lang-css'
 import { linter, lintGutter, lintKeymap, setDiagnostics } from '@codemirror/lint'
+import { search, searchKeymap } from '@codemirror/search'
 import { bracketMatching, indentOnInput, foldGutter, syntaxHighlighting, HighlightStyle } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 import { actions, getState, useStore } from '../store'
@@ -81,10 +82,11 @@ export function EditorPane() {
       bracketMatching(),
       closeBrackets(),
       autocompletion(),
+      search({ top: true }),
       syntaxHighlighting(forgeHighlight),
       lintGutter(),
       lintSource,
-      keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...completionKeymap, ...lintKeymap, indentWithTab]),
+      keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap, ...lintKeymap, indentWithTab]),
       langFor(activePath ?? ''),
       EditorView.updateListener.of(update => {
         if (update.docChanged && activePath) actions.editFile(activePath, update.state.doc.toString())
@@ -134,9 +136,31 @@ export function EditorPane() {
     )
   }, [diagnosticsVersion, activePath])
 
+  // Build-error clicks: jump to the requested file/line/col.
+  const jump = useStore(s => s.jump)
+  const jumpPath = useStore(s => s.activePath)
+  useEffect(() => {
+    if (!jump?.n || !viewRef.current || jumpPath !== jump.path) return
+    const pos = posFromLineCol(viewRef.current.state.doc.toString(), { line: jump.line, column: jump.column })
+    viewRef.current.focus()
+    viewRef.current.dispatch({ selection: EditorSelection.cursor(pos), scrollIntoView: true })
+  }, [jump?.n, jumpPath])
+
 
   if (activePath === null) {
-    return <div className="h-full grid place-items-center text-neutral-500 select-none">No file open</div>
+    return (
+      <div className="h-full grid place-items-center gap-3 text-neutral-500 select-none">
+        <div className="text-center space-y-2">
+          <div>No file open</div>
+          <button
+            onClick={() => { const p = prompt('New file (e.g. utils/helpers.ts):'); if (p) actions.addFile(p.trim()) }}
+            className="px-3 py-2 rounded border border-[#23282f] text-xs hover:text-neutral-200 focus-visible:outline focus-visible:outline-amber-400"
+          >
+            New file
+          </button>
+        </div>
+      </div>
+    )
   }
   return <div ref={viewHost} className="h-full w-full overflow-hidden" data-testid="editor" />
 }

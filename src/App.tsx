@@ -118,6 +118,15 @@ export function App() {
   const [pane, setPane] = useState<'code' | 'preview' | 'console'>('code')
   const [drawer, setDrawer] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [help, setHelp] = useState(false)
+
+  // Preview-pane error-line clicks switch mobile focus to the code pane.
+  useEffect(() => {
+    if (!narrow) return
+    const onJump = () => setPane('code')
+    window.addEventListener('forge:jump', onJump)
+    return () => window.removeEventListener('forge:jump', onJump)
+  }, [narrow])
   const lay0 = useRef(loadLayout()).current
   const [sidebarW, setSidebarW] = useState<number>(lay0.sidebarW ?? 176)
   const [editorFrac, setEditorFrac] = useState<number>(lay0.editorFrac ?? 0.5)
@@ -160,6 +169,11 @@ export function App() {
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault()
         void runBuild().catch(err => actions.pushConsole({ kind: 'error', text: 'Build failed: ' + String(err) }))
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault()
+        setHelp(true)
+      } else if (e.key === '?' && e.target === document.body) {
+        setHelp(true)
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault() // persistence is debounced (1s after last keystroke)
         if (getState().status === 'loading') return
@@ -206,6 +220,9 @@ export function App() {
           onChange={e => actions.renameProject(e.target.value)}
           aria-label="Project name"
         />
+        <ProjectsMenu />
+        <SavedFlash />
+        <BuildChip building={building} />
         <button
           onClick={() => void runBuild()}
           disabled={building}
@@ -218,9 +235,10 @@ export function App() {
           auto-run
         </label>
         <div className="flex-1" />
-        <button onClick={() => setPaletteOpen(true)} className="text-xs text-neutral-500 hover:text-neutral-300 mono px-2 py-1 border border-[#23282f] rounded">
-          Ctrl+K
+        <button onClick={() => setPaletteOpen(true)} aria-label="Command menu" className="text-xs text-neutral-500 hover:text-neutral-300 mono px-2 py-1 border border-[#23282f] rounded">
+          {narrow ? 'Menu' : 'Ctrl+K'}
         </button>
+        <button onClick={() => setHelp(true)} aria-label="Keyboard shortcuts" title="Shortcuts (?)" className="p-2 -mr-1 text-neutral-600 hover:text-neutral-300 hidden md:block focus-visible:outline focus-visible:outline-amber-400">?</button>
       </header>
       <div className="flex-1 flex min-h-0">
         {narrow ? (
@@ -273,8 +291,94 @@ export function App() {
       </div>
       {narrow && <FilesDrawer open={drawer} onClose={() => setDrawer(false)} />}
       <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ShortcutsModal open={help} onClose={() => setHelp(false)} />
     </div>
   )
+}
+
+function ProjectsMenu() {
+  const current = useStore(s => s.project?.id)
+  const [others, setOthers] = useState<{ id: string; name: string; updatedAt: number }[] | null>(null)
+  useEffect(() => {
+    let on = true
+    import('./lib/idb').then(m => m.idbStore().list()).then(list => { if (on) setOthers(list) }).catch(() => { if (on) setOthers([]) })
+    return () => { on = false }
+  }, [current])
+  const candidates = (others ?? []).filter(p => p.id !== current)
+  if (candidates.length === 0) return null
+  return (
+    <select
+      aria-label="Switch to saved project"
+      value=""
+      onChange={e => {
+        const id = e.target.value
+        if (!id) return
+        e.target.value = ''
+        import('./lib/idb').then(m => m.idbStore().get(id)).then(p => { if (p) actions.openProject(p) })
+      }}
+      className="text-xs text-neutral-500 hover:text-neutral-300 bg-transparent border border-[#23282f] rounded px-2 py-1 focus-visible:outline focus-visible:outline-amber-400 max-w-28 truncate"
+    >
+      <option value="" disabled hidden>Projects…</option>
+      {candidates.map(p => (
+        <option key={p.id} value={p.id}>{p.name} — {new Date(p.updatedAt).toLocaleDateString()}</option>
+      ))}
+    </select>
+  )
+}
+
+function ShortcutsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  useEffect(() => {
+    if (!open) return
+    const on = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', on)
+    return () => window.removeEventListener('keydown', on)
+  }, [open, onClose])
+  if (!open) return null
+  const rows: [string, string][] = [
+    ['Ctrl / ⌘ + K', 'Command palette'],
+    ['Ctrl / ⌘ + Enter', 'Run project'],
+    ['Ctrl / ⌘ + F', 'Find in file'],
+    ['Ctrl / ⌘ + H', 'Replace in file'],
+    ['?', 'Shortcuts help'],
+  ]
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 grid place-items-center" onClick={onClose}>
+      <div role="dialog" aria-label="Keyboard shortcuts" className="bg-[#0e1114] border border-[#23282f] rounded-lg p-5 w-80 max-w-[90vw] shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="font-serif text-lg text-amber-400 mb-3">Shortcuts</div>
+        <dl className="space-y-2 text-xs">
+          {rows.map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-4">
+              <dt className="mono text-neutral-300">{k}</dt>
+              <dd className="text-neutral-500 text-right">{v}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-4 text-[10px] text-neutral-600">Everything persists in your browser automatically — no save button needed.</div>
+      </div>
+    </div>
+  )
+}
+
+function SavedFlash() {
+  const savedAt = useStore(s => s.savedAt)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    if (!savedAt) return
+    setVisible(true)
+    const t = setTimeout(() => setVisible(false), 1500)
+    return () => clearTimeout(t)
+  }, [savedAt])
+  if (!savedAt || !visible) return <span className="text-[10px] text-neutral-600 hidden md:inline" aria-live="polite" />
+  return <span className="text-[10px] text-emerald-500/90 hidden md:inline" aria-live="polite">saved ✓</span>
+}
+
+function BuildChip({ building }: { building: boolean }) {
+  const hasError = useStore(s => s.build?.diagnostics.some(d => d.severity === 'error') ?? false)
+  const hasBuild = useStore(s => s.build != null)
+  if (building) return <span className="text-[10px] text-amber-400/80 hidden md:inline">building…</span>
+  if (hasError) return <span className="text-[10px] text-red-400/90 hidden md:inline">errors</span>
+  if (hasBuild) return <span className="text-[10px] text-neutral-500 hidden md:inline">build ok</span>
+  return null
 }
 
 function MobilePanes({ pane, setPane }: { pane: 'code' | 'preview' | 'console'; setPane: (p: 'code' | 'preview' | 'console') => void }) {
@@ -352,14 +456,48 @@ function FilesDrawer({ open, onClose }: { open: boolean; onClose: () => void }) 
         aria-label="Files"
       >
         {project?.files.map(f => (
-          <button
+          <div
             key={f.path}
-            onClick={() => { actions.openTab(f.path); onClose() }}
-            className={'w-full text-left px-3 py-2.5 text-xs mono focus-visible:outline focus-visible:outline-amber-400 ' + (f.path === activePath ? 'text-amber-300 bg-[#16191d]' : 'text-neutral-400')}
+            className={'flex items-center gap-1 ' + (f.path === activePath ? 'text-amber-300 bg-[#16191d]' : 'text-neutral-400')}
           >
-            {f.path}
-          </button>
+            <button
+              onClick={() => { actions.openTab(f.path); onClose() }}
+              className={'flex-1 text-left px-3 py-2.5 text-xs mono focus-visible:outline focus-visible:outline-amber-400'}
+            >
+              {f.path}
+            </button>
+            <button
+              aria-label={'Rename ' + f.path}
+              onClick={() => {
+                const next = prompt('Rename to:', f.path)
+                if (!next || next === f.path || !project) return
+                import('./lib/paths').then(m => {
+                  if (!m.isValidPath(next)) { actions.pushConsole({ kind: 'error', text: "Invalid path: no '..', leading /, or backslash" }); return }
+                  if (project.files.some(x => x.path === next)) { actions.pushConsole({ kind: 'error', text: `File already exists: ${next}` }); return }
+                  actions.renameFile(f.path, next)
+                })
+              }}
+              className="px-2 py-2.5 text-[11px] text-neutral-600 hover:text-neutral-300 focus-visible:outline focus-visible:outline-amber-400"
+            >
+              ✎
+            </button>
+            <button
+              aria-label={'Delete ' + f.path}
+              onClick={() => { if (confirm(`Delete ${f.path}? Cannot be undone.`)) actions.deleteFile(f.path) }}
+              className="px-2 py-2.5 text-[11px] text-neutral-600 hover:text-red-400 focus-visible:outline focus-visible:outline-amber-400"
+            >
+              🗑
+            </button>
+          </div>
         ))}
+        <div className="p-3 border-t border-[#1c2026]">
+          <button
+            onClick={() => { const p = prompt('New file (e.g. utils/helpers.ts):'); if (p) actions.addFile(p.trim()) }}
+            className="w-full py-2.5 text-xs rounded border border-[#23282f] text-neutral-300 hover:text-amber-300 focus-visible:outline focus-visible:outline-amber-400"
+          >
+            + New file
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -10,15 +10,18 @@ export interface Command {
 
 export function useCommands(): Command[] {
   const project = useStore(s => s.project)
+  const autoRun = useStore(s => s.autoRun)
   const cmds: Command[] = [
     { id: 'run', label: 'Run project', hint: 'Ctrl+Enter', run: () => void runBuild() },
-    { id: 'toggle-auto', label: 'Toggle auto-run', hint: getState().autoRun ? 'on' : 'off', run: () => actions.setAutoRun(!getState().autoRun) },
+    { id: 'toggle-auto', label: 'Toggle auto-run', hint: autoRun ? 'currently on' : 'currently off', run: () => actions.setAutoRun(!autoRun) },
     { id: 'clear-console', label: 'Clear console', run: () => actions.clearConsole() },
     { id: 'new-file', label: 'New file…', run: () => newFile() },
+    { id: 'rename-file', label: 'Rename current file…', run: () => renameFile() },
     { id: 'share', label: 'Copy share link', run: () => void share().catch(() => {}) },
     { id: 'export', label: 'Export project (.forge.json)', run: () => void import('../lib/share').then(m => { const p = getState().project; if (p) m.exportProject(p) }) },
     { id: 'import', label: 'Import project…', run: () => doImport() },
     { id: 'new-project', label: 'New project…', run: () => { if (confirm('Start a new project (current one is saved)?')) actions.newProject() } },
+    { id: 'switch-project', label: 'Switch project…', run: () => void switchProject() },
   ]
   if (project) {
     for (const f of project.files) {
@@ -58,6 +61,28 @@ async function share() {
   const url = await toShareUrl(p)
   await navigator.clipboard.writeText(url)
   actions.pushConsole({ kind: 'info', text: 'Share link copied (' + url.length + ' chars)' })
+}
+
+function renameFile() {
+  const p = getState().project
+  const active = getState().activePath
+  if (!p || !active) { actions.pushConsole({ kind: 'info', text: 'Open a file first' }); return }
+  const next = prompt('Rename to:', active)
+  if (!next || next === active) return
+  import('../lib/paths').then(m => {
+    if (!m.isValidPath(next)) {
+      actions.pushConsole({ kind: 'error', text: "Invalid path: no '..', leading /, or backslash" })
+      return
+    }
+    if (p.files.some(f => f.path === next)) { actions.pushConsole({ kind: 'error', text: `File already exists: ${next}` }); return }
+    actions.renameFile(active, next)
+  })
+}
+
+function switchProject() {
+  // replaced by the header Projects selector (ProjectsMenu) — see App.tsx
+  const p = getState().project
+  actions.pushConsole({ kind: 'info', text: p ? 'Use the Projects menu (next to the project name)' : 'No project open' })
 }
 
 function newFile() {

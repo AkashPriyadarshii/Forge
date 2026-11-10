@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { Project, BuildResult, ConsoleMsg, BuildDiagnostic } from './types'
+import { isValidPath } from './lib/paths'
 
 export interface State {
   status: 'loading' | 'ready' | 'error'
@@ -13,9 +14,12 @@ export interface State {
   autoRun: boolean
   consoleLines: ConsoleMsg[]
   diagnostics: BuildDiagnostic[]
-  blobUrls: { js?: string; css?: string }
   previewHtml: string | null
   previewKey: number
+  /** timestamp of last persisted save (drives the “Saved ✓” header flash) */
+  savedAt: number | null
+  /** request to open a file at a line (build error click) — n bumps each request */
+  jump: { path: string; line: number; column: number; n: number } | null
 }
 
 let state: State = {
@@ -29,9 +33,10 @@ let state: State = {
   autoRun: true,
   consoleLines: [],
   diagnostics: [],
-  blobUrls: {},
   previewHtml: null,
   previewKey: 0,
+  savedAt: null,
+  jump: null,
 }
 
 const listeners = new Set<() => void>()
@@ -90,6 +95,18 @@ export const actions = {
     })
     persistSoon()
   },
+  renameFile(old: string, next: string) {
+    if (old === next) return
+    const p = state.project
+    if (!p || !isValidPath(next) || p.files.some(f => f.path === next)) return
+    const project = { ...p, updatedAt: Date.now(), files: p.files.map(f => (f.path === old ? { path: next, content: f.content } : f)) }
+    set({
+      project,
+      activePath: state.activePath === old ? next : state.activePath,
+      tabs: state.tabs.map(t => (t === old ? next : t)),
+    })
+    persistSoon()
+  },
   renameProject(name: string) {
     if (!state.project) return
     set({ project: { ...state.project, name } })
@@ -106,6 +123,10 @@ export const actions = {
   },
   pushConsole(msg: ConsoleMsg) {
     set({ consoleLines: [...state.consoleLines.slice(-200), msg] })
+  },
+  jumpTo(path: string, line: number, column = 1) {
+    actions.openTab(path)
+    set({ jump: { path, line, column, n: (state.jump?.n ?? 0) + 1 } })
   },
   clearConsole() { set({ consoleLines: [] }) },
   setBuilding(b: boolean) { set({ building: b }) },
@@ -145,7 +166,7 @@ function persistSoon() {
   persistTimer = setTimeout(() => {
     persistTimer = null
     const p = state.project
-    if (p) void persist(p)
+    if (p) void persist(p).then(() => set({ savedAt: Date.now() }))
   }, 1000)
 }
 
