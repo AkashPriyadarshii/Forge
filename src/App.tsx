@@ -21,7 +21,7 @@ function Resizer({ orientation, size, onDrag }: { orientation: 'vertical' | 'hor
       aria-valuenow={size}
       onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); onDrag(e) }}
       onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) onDrag(e) }}
-      className={orientation === 'vertical' ? 'w-1 cursor-col-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors shrink-0' : 'h-1 cursor-row-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors'}
+      className={orientation === 'vertical' ? 'w-1 cursor-col-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors shrink-0 touch-none' : 'h-1 cursor-row-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors touch-none'}
     />
   )
 }
@@ -94,6 +94,19 @@ function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
   )
 }
 
+function useNarrow() {
+  // responsive gate reads the window, not the platform: split-screen/rotated
+  // phones and resized desktop windows all move this value
+  const mq = window.matchMedia('(max-width: 767px)')
+  const [narrow, setNarrow] = useState(mq.matches)
+  useEffect(() => {
+    const on = () => setNarrow(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [mq])
+  return narrow
+}
+
 export function App() {
   const status = useStore(s => s.status)
   const project = useStore(s => s.project)
@@ -101,6 +114,9 @@ export function App() {
   const activePath = useStore(s => s.activePath)
   const building = useStore(s => s.building)
   const autoRun = useStore(s => s.autoRun)
+  const narrow = useNarrow()
+  const [pane, setPane] = useState<'code' | 'preview' | 'console'>('code')
+  const [drawer, setDrawer] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const lay0 = useRef(loadLayout()).current
   const [sidebarW, setSidebarW] = useState<number>(lay0.sidebarW ?? 176)
@@ -174,6 +190,15 @@ export function App() {
   return (
     <div className="h-full flex flex-col">
       <header className="flex items-center gap-3 px-3 py-1.5 border-b border-[#1c2026] bg-[#0e1114] select-none">
+        {narrow && (
+          <button
+            onClick={() => setDrawer(true)}
+            aria-label="Open files"
+            className="p-2 -ml-1 text-neutral-400 hover:text-neutral-200 focus-visible:outline focus-visible:outline-amber-400"
+          >
+            ☰
+          </button>
+        )}
         <span className="font-serif text-lg tracking-tight text-amber-400">Forge</span>
         <input
           className="bg-transparent text-sm text-neutral-300 hover:text-neutral-100 focus:text-neutral-100 outline-none px-1 w-40 focus-visible:outline focus-visible:outline-amber-400"
@@ -188,7 +213,7 @@ export function App() {
         >
           {building ? 'Building…' : 'Run'}
         </button>
-        <label className="flex items-center gap-1.5 text-xs text-neutral-400 cursor-pointer">
+        <label className="hidden md:flex items-center gap-1.5 text-xs text-neutral-400 cursor-pointer">
           <input type="checkbox" checked={autoRun} onChange={e => actions.setAutoRun(e.target.checked)} className="accent-amber-400" />
           auto-run
         </label>
@@ -198,6 +223,9 @@ export function App() {
         </button>
       </header>
       <div className="flex-1 flex min-h-0">
+        {narrow ? (
+          <MobilePanes pane={pane} setPane={setPane} />
+        ) : (<>
         <aside className="border-r border-[#1c2026] bg-[#0e1114] hidden md:flex flex-col shrink-0 overflow-hidden" style={{ width: clamp(sidebarW, 140, 360) }}>
           <FileTree />
         </aside>
@@ -240,8 +268,99 @@ export function App() {
             </div>
           </section>
         </main>
+        </>
+        )}
       </div>
+      {narrow && <FilesDrawer open={drawer} onClose={() => setDrawer(false)} />}
       <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+    </div>
+  )
+}
+
+function MobilePanes({ pane, setPane }: { pane: 'code' | 'preview' | 'console'; setPane: (p: 'code' | 'preview' | 'console') => void }) {
+  const tabs = useStore(s => s.tabs)
+  const activePath = useStore(s => s.activePath)
+  const consoleCount = useStore(s => s.consoleLines.length)
+  let body: React.ReactNode = null
+  if (pane === 'code') {
+    body = (
+      <section className="h-full flex flex-col min-h-0">
+        <div className="flex items-center border-b border-[#1c2026] bg-[#0e1114] overflow-x-auto">
+          {tabs.map(t => (
+            <div
+              key={t}
+              className={'flex items-center gap-2 px-3 py-2.5 text-xs border-r border-[#1c2026] cursor-pointer whitespace-nowrap ' + (t === activePath ? 'bg-[#0b0d10] text-amber-300' : 'text-neutral-400 hover:text-neutral-200')}
+              onClick={() => actions.setActive(t)}
+            >
+              <span className="mono">{t}</span>
+              <button
+                aria-label={'Close ' + t}
+                className="text-neutral-600 hover:text-neutral-300 px-1 py-1"
+                onClick={e => { e.stopPropagation(); actions.closeTab(t) }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex-1 min-h-0">
+          <EditorPane />
+        </div>
+      </section>
+    )
+  } else if (pane === 'preview') {
+    body = <div className="h-full min-h-0"><PreviewPane /></div>
+  } else {
+    body = <div className="h-full min-h-0"><ConsolePane /></div>
+  }
+  return (
+    <main className="flex-1 flex flex-col min-w-0">
+      <nav className="flex border-b border-[#1c2026] bg-[#0e1114]" role="tablist" aria-label="Panes">
+        {(['code', 'preview', 'console'] as const).map(id => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={pane === id}
+            onClick={() => setPane(id)}
+            className={'flex-1 py-3 text-[11px] uppercase tracking-widest focus-visible:outline focus-visible:outline-amber-400 ' + (pane === id ? 'text-amber-300 border-b border-amber-400' : 'text-neutral-500')}
+          >
+            {id}{id === 'console' && consoleCount > 0 ? ` (${consoleCount})` : ''}
+          </button>
+        ))}
+      </nav>
+      <div className="flex-1 min-h-0">{body}</div>
+    </main>
+  )
+}
+
+function FilesDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const project = useStore(s => s.project)
+  const activePath = useStore(s => s.activePath)
+  useEffect(() => {
+    if (!open) return
+    const on = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', on)
+    return () => window.removeEventListener('keydown', on)
+  }, [open, onClose])
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose}>
+      <div
+        className="absolute inset-y-0 left-0 w-64 bg-[#0e1114] border-r border-[#1c2026] shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-label="Files"
+      >
+        {project?.files.map(f => (
+          <button
+            key={f.path}
+            onClick={() => { actions.openTab(f.path); onClose() }}
+            className={'w-full text-left px-3 py-2.5 text-xs mono focus-visible:outline focus-visible:outline-amber-400 ' + (f.path === activePath ? 'text-amber-300 bg-[#16191d]' : 'text-neutral-400')}
+          >
+            {f.path}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

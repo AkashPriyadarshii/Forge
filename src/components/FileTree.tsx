@@ -20,7 +20,7 @@ export function FileTree() {
           return (
             <li key={f.path}>
               <button
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[#16191d] focus-visible:outline focus-visible:outline-amber-400"
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-[#16191d] focus-visible:outline focus-visible:outline-amber-400"
                 onClick={() => actions.openTab(f.path)}
                 title={f.path}
               >
