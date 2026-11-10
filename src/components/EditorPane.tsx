@@ -6,12 +6,12 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } 
 import { javascript } from '@codemirror/lang-javascript'
 import { html as htmlLang } from '@codemirror/lang-html'
 import { css as cssLang } from '@codemirror/lang-css'
-import { linter, lintGutter, lintKeymap } from '@codemirror/lint'
+import { linter, lintGutter, lintKeymap, setDiagnostics } from '@codemirror/lint'
 import { bracketMatching, indentOnInput, foldGutter, syntaxHighlighting, HighlightStyle } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 import { actions, getState, useStore } from '../store'
 
-// Forge syntax palette — one accent (amber), warm neutrals, structured density.
+// Forge highlight palette — warm neutrals, Control layers, structured density.
 const forgeHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: '#c678dd' },
   { tag: [tags.string, tags.special(tags.string)], color: '#98c379' },
@@ -48,6 +48,7 @@ export function EditorPane() {
   const project = useStore(s => s.project)
   const diagnosticsVersion = useStore(s => s.build)
   const viewHost = useRef<HTMLDivElement | null>(null)
+  const viewRef = useRef<EditorView | null>(null)
   const states = useRef(new Map<string, EditorState>())
 
   const savedDoc = useMemo(() => project?.files.find(f => f.path === activePath)?.content ?? '', [project, activePath])
@@ -100,12 +101,38 @@ export function EditorPane() {
     const cached = states.current.get(activePath)
     const fresh = cached && cached.doc.toString() === docRef.current ? cached : EditorState.create({ doc: docRef.current, extensions })
     const view = new EditorView({ state: fresh, parent: host })
+    viewRef.current = view
     return () => {
       states.current.set(activePath, view.state)
+      viewRef.current = null
       view.destroy()
     }
   }, [activePath, extensions])
-  void diagnosticsVersion // lint re-runs on new build results
+
+  // Evict cached tab states for files that no longer exist.
+  useEffect(() => {
+    if (!project) return
+    const paths = new Set(project.files.map(f => f.path))
+    for (const path of states.current.keys()) {
+      if (!paths.has(path)) states.current.delete(path)
+    }
+  }, [project])
+
+  // Lint markers refresh with new build results, not just doc edits.
+  useEffect(() => {
+    if (!viewRef.current || !activePath) return
+    setDiagnostics(
+      viewRef.current.state,
+      getState().diagnostics
+        .filter(d => d.path === activePath)
+        .map(d => ({
+          from: posFromLineCol(docRef.current, d),
+          to: posFromLineCol(docRef.current, d, true),
+          severity: d.severity,
+          message: d.text,
+        })),
+    )
+  }, [diagnosticsVersion, activePath])
 
 
   if (activePath === null) {

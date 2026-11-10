@@ -9,3 +9,9 @@ export function resolveRelative(importer: string, spec: string): string {
   }
   return stack.join('/')
 }
+
+/** A path safe to create/open in the virtual FS: no traversal, absolute, or backslash. */
+export function isValidPath(path: string): boolean {
+  return path.length > 0 && !path.startsWith('/') && !path.includes('\\') &&
+    !path.split('/').some(s => s === '..')
+}

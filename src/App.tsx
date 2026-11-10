@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actions, useStore } from './store'
+import { actions, useStore, getState } from './store'
 import { EditorPane } from './components/EditorPane'
 import { FileTree } from './components/FileTree'
 import { ConsolePane, useConsoleListener } from './components/ConsolePane'
@@ -13,27 +13,15 @@ function loadLayout() {
 }
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
-function VResizer({ size, onDrag }: { size: number; onDrag: (e: React.PointerEvent) => void }) {
+function Resizer({ orientation, size, onDrag }: { orientation: 'vertical' | 'horizontal'; size: number; onDrag: (e: React.PointerEvent) => void }) {
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={orientation}
       aria-valuenow={size}
       onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); onDrag(e) }}
       onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) onDrag(e) }}
-      className="w-1 cursor-col-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors shrink-0"
-    />
-  )
-}
-
-function HResizer({ onDrag }: { onDrag: (e: React.PointerEvent) => void }) {
-  return (
-    <div
-      role="separator"
-      aria-orientation="horizontal"
-      onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); onDrag(e) }}
-      onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) onDrag(e) }}
-      className="h-1 cursor-row-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors"
+      className={orientation === 'vertical' ? 'w-1 cursor-col-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors shrink-0' : 'h-1 cursor-row-resize bg-[#1c2026] hover:bg-amber-400/50 transition-colors'}
     />
   )
 }
@@ -45,7 +33,8 @@ function useAutoRun() {
     if (!autoRun || !project) return
     const t = setTimeout(() => void runBuild().catch(e => actions.pushConsole({ kind: 'error', text: 'Build failed: ' + String(e) })), 700)
     return () => clearTimeout(t)
-  }, [project, autoRun, project?.files.map(f => f.content.length).join() + (project?.files.map(f => f.path).join() ?? '')])
+  // dep key must reflect actual content — length-based keys miss same-size edits
+  }, [project, autoRun, project?.files.map(f => f.path + '\u0000' + f.content).join('\u0001') ?? ''])
 }
 
 function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -130,9 +119,9 @@ export function App() {
     booted.current = true
     void (async () => {
       if (location.hash.startsWith('#p=')) {
-        const { fromShareUrl } = await import('./lib/share')
+        const { fromShareHash } = await import('./lib/share')
         try {
-          const p = await fromShareUrl(location.hash.slice(3))
+          const p = await fromShareHash(location.hash.slice(3))
           history.replaceState(null, '', location.pathname)
           actions.openProject(p)
           actions.pushConsole({ kind: 'info', text: `Loaded shared project "${p.name}"` })
@@ -156,8 +145,9 @@ export function App() {
         e.preventDefault()
         void runBuild().catch(err => actions.pushConsole({ kind: 'error', text: 'Build failed: ' + String(err) }))
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault() // persistence is automatic; Ctrl+S just confirms
-        actions.pushConsole({ kind: 'info', text: 'Saved (auto-synced to browser storage)' })
+        e.preventDefault() // persistence is debounced (1s after last keystroke)
+        if (getState().status === 'loading') return
+        actions.pushConsole({ kind: 'info', text: 'Auto-save: changes persist to browser storage ~1s after your last keystroke' })
       }
     }
     window.addEventListener('keydown', onKey)
@@ -211,7 +201,7 @@ export function App() {
         <aside className="border-r border-[#1c2026] bg-[#0e1114] hidden md:flex flex-col shrink-0 overflow-hidden" style={{ width: clamp(sidebarW, 140, 360) }}>
           <FileTree />
         </aside>
-        <VResizer size={sidebarW} onDrag={e => setSidebarW(clamp(sidebarW + e.movementX, 140, 360))} />
+        <Resizer orientation='vertical' size={sidebarW} onDrag={e => setSidebarW(clamp(sidebarW + e.movementX, 140, 360))} />
         <main className="flex-1 flex min-w-0">
           <section className="min-w-0 border-r border-[#1c2026] flex flex-col" style={{ flexBasis: `${clamp(editorFrac, 0.25, 0.8) * 100}%` }}>
             <div className="flex items-center border-b border-[#1c2026] bg-[#0e1114] overflow-x-auto">
@@ -236,7 +226,7 @@ export function App() {
               <EditorPane />
             </div>
           </section>
-          <VResizer size={Math.round(editorFrac * 100)} onDrag={e => {
+          <Resizer orientation='vertical' size={Math.round(editorFrac * 100)} onDrag={e => {
             // React nulls synthetic event.currentTarget after dispatch; capture width now
             const w = e.currentTarget.parentElement!.clientWidth
             const dx = e.movementX
@@ -244,7 +234,7 @@ export function App() {
           }} />
           <section className="flex-1 min-w-0 grid" style={{ gridTemplateRows: '1fr auto' }}>
             <div className="min-h-0"><PreviewPane /></div>
-            <HResizer onDrag={e => setConsoleH(h => clamp(h - e.movementY, 100, 420))} />
+            <Resizer orientation='horizontal' size={consoleH} onDrag={e => setConsoleH(h => clamp(h - e.movementY, 100, 420))} />
             <div className="border-t border-[#1c2026]" style={{ height: clamp(consoleH, 100, 420) }}>
               <ConsolePane />
             </div>

@@ -14,7 +14,7 @@ export function useCommands(): Command[] {
     { id: 'run', label: 'Run project', hint: 'Ctrl+Enter', run: () => void runBuild() },
     { id: 'toggle-auto', label: 'Toggle auto-run', hint: getState().autoRun ? 'on' : 'off', run: () => actions.setAutoRun(!getState().autoRun) },
     { id: 'clear-console', label: 'Clear console', run: () => actions.clearConsole() },
-    { id: 'new-file', label: 'New file…', run: () => { const p = prompt('File path:'); if (p) actions.addFile(p.replace(/^\/+/, '')) } },
+    { id: 'new-file', label: 'New file…', run: () => newFile() },
     { id: 'share', label: 'Copy share link', run: () => void share().catch(() => {}) },
     { id: 'export', label: 'Export project (.forge.json)', run: () => void import('../lib/share').then(m => { const p = getState().project; if (p) m.exportProject(p) }) },
     { id: 'import', label: 'Import project…', run: () => doImport() },
@@ -39,11 +39,11 @@ export async function runBuild() {
   const result = await orchestrator.build(files)
   if (result.js && result.html) {
     const prevHtml = generatePreviewHtml(p, result)
-    actions.setBuildResult(result, {})
+    actions.setBuildResult(result)
     actions.setStatus({ previewHtml: prevHtml, previewKey: getState().previewKey })
   } else {
     // failed build: keep the last successful preview on screen, surface diagnostics
-    actions.setBuildResult(result, getState().blobUrls)
+    actions.setBuildResult(result)
     for (const d of result.diagnostics.filter(x => x.severity === 'error').slice(0, 10)) {
       actions.pushConsole({ kind: 'error', text: `${d.path || '<build>'}:${d.line}:${d.column} ${d.text}` })
     }
@@ -58,6 +58,18 @@ async function share() {
   const url = await toShareUrl(p)
   await navigator.clipboard.writeText(url)
   actions.pushConsole({ kind: 'info', text: 'Share link copied (' + url.length + ' chars)' })
+}
+
+function newFile() {
+  const p = prompt('New file (e.g. utils/helpers.ts):')
+  if (!p) return
+  void import('../lib/paths').then(m => {
+    if (!m.isValidPath(p)) {
+      actions.pushConsole({ kind: 'error', text: "Invalid path: no '..', leading /, or backslash" })
+      return
+    }
+    if (!actions.addFile(p)) actions.pushConsole({ kind: 'error', text: `File already exists: ${p}` })
+  })
 }
 
 function doImport() {

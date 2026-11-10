@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { actions, useStore } from '../store'
 import type { ConsoleMsg } from '../types'
 
@@ -32,21 +32,17 @@ function Line({ msg }: { msg: ConsoleMsg }) {
 }
 
 export function useConsoleListener(isActive: boolean) {
-  const [listening, setListening] = useState(false)
   useEffect(() => {
     if (!isActive) return
     const onMsg = (e: MessageEvent) => {
       const d = e.data as { forge?: string; kind?: string; text?: string; event?: string }
-      if (d?.forge !== 'console') {
-        // foreign message sources inside a user-controlled iframe keep this out
-        return
-      }
+      // trust only the active preview frame — not window.parent or any nested frame
+      if (e.source !== (window as unknown as { __forgeFrame?: MessageEventSource }).__forgeFrame) return
+      if (d?.forge !== 'console') return
       const kind = (d.kind ?? 'log') as ConsoleMsg['kind']
       actions.pushConsole({ kind, text: d.text ?? '', event: d.event as ConsoleMsg['event'] })
     }
     window.addEventListener('message', onMsg)
-    setListening(true)
     return () => window.removeEventListener('message', onMsg)
   }, [isActive])
-  return listening
 }

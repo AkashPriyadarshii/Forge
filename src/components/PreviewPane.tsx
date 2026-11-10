@@ -14,6 +14,12 @@ export function PreviewPane() {
     if (frame.current && html !== null) frame.current.srcdoc = html
   }, [html, key])
 
+  // console bridge whitelist: the listener trusts only THIS frame's messages
+  useEffect(() => {
+    (window as unknown as { __forgeFrame: unknown }).__forgeFrame = frame.current
+    return () => { delete (window as unknown as { __forgeFrame?: unknown }).__forgeFrame }
+  }, [])
+
   const empty = html === null
   return (
     <div className="h-full relative bg-white">
@@ -28,7 +34,6 @@ export function PreviewPane() {
         title="Forge live preview"
         className="w-full h-full border-0 bg-white"
         sandbox="allow-scripts allow-forms allow-pointer-lock"
-        allow="clipboard-write"
       />
     </div>
   )

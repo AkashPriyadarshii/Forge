@@ -17,15 +17,13 @@ export class BuildOrchestrator {
     this.worker.postMessage({ wasmUrl })
     this.worker.onmessage = (e: MessageEvent<{ result: BuildResult }>) => {
       this.busy = false
-      const deliver = this.waiters
-      this.waiters = []
+      // deliver the current result to waiters BEFORE starting the queued build
+      for (const d of this.waiters.splice(0)) d(e.data.result)
       if (this.nextFiles) {
         const files = this.nextFiles
         this.nextFiles = null
         void this.run(files)
-        return
       }
-      for (const d of deliver) d(e.data.result)
     }
   }
 

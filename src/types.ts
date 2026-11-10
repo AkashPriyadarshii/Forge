@@ -37,7 +37,3 @@ export interface ConsoleMsg {
   event?: 'uncaught' | 'unhandledrejection'
 }
 
-export const ENTRY = 'index.html'
-export const CODE_EXTENSIONS: Record<string, string> = {
-  js: 'js', jsx: 'jsx', ts: 'ts', tsx: 'tsx', css: 'css', html: 'html', json: 'json', mjs: 'js', cjs: 'js',
-}

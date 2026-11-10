@@ -69,13 +69,14 @@ export const actions = {
     set({ project: { ...p, files } })
     persistSoon()
   },
-  addFile(path: string) {
+  addFile(path: string): boolean {
     const p = state.project
-    if (!p || p.files.some(f => f.path === path)) return
+    if (!p || p.files.some(f => f.path === path)) return false
     const files = [...p.files, { path, content: '' }].sort((a, b) => a.path.localeCompare(b.path))
     set({ project: { ...p, files } })
     actions.openTab(path)
     persistSoon()
+    return true
   },
   deleteFile(path: string) {
     const p = state.project
@@ -96,11 +97,11 @@ export const actions = {
   },
   newProject() {
     const seed = defaultProject(`project-${Math.random().toString(36).slice(2, 6)}`)
-    set({ project: seed, tabs: ['index.html'], activePath: 'index.html', build: null, diagnostics: [], consoleLines: [], blobUrls: {}, previewHtml: null, previewKey: state.previewKey + 1 })
+    set({ project: seed, tabs: ['index.html'], activePath: 'index.html', build: null, diagnostics: [], consoleLines: [], previewHtml: null, previewKey: state.previewKey + 1 })
     persistSoon()
   },
   openProject(p: Project) {
-    set({ project: p, tabs: p.files.some(f => f.path === 'index.html') ? ['index.html'] : p.files.slice(0, 1).map(f => f.path), activePath: p.files[0]?.path ?? null, build: null, diagnostics: [], consoleLines: [], blobUrls: {}, previewHtml: null, previewKey: state.previewKey + 1 })
+    set({ project: p, tabs: p.files.some(f => f.path === 'index.html') ? ['index.html'] : p.files.slice(0, 1).map(f => f.path), activePath: p.files[0]?.path ?? null, build: null, diagnostics: [], consoleLines: [], previewHtml: null, previewKey: state.previewKey + 1 })
     persistSoon()
   },
   pushConsole(msg: ConsoleMsg) {
@@ -108,11 +109,10 @@ export const actions = {
   },
   clearConsole() { set({ consoleLines: [] }) },
   setBuilding(b: boolean) { set({ building: b }) },
-  setBuildResult(result: BuildResult, blobUrls: { js?: string; css?: string }) {
+  setBuildResult(result: BuildResult) {
     set({
       build: result,
       diagnostics: result.diagnostics,
-      blobUrls,
       previewKey: state.previewKey + 1,
       building: false,
     })

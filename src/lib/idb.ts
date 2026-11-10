@@ -49,10 +49,3 @@ export function idbStore(): ProjectStore {
   }
 }
 
-// Ask Chrome not to silently evict projects under storage pressure.
-export async function requestPersistentStorage(): Promise<boolean> {
-  if (navigator.storage?.persist) {
-    if ((await navigator.storage.persisted()) || (await navigator.storage.persist())) return true
-  }
-  return false
-}

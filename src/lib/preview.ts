@@ -30,16 +30,6 @@ const CONSOLE_SHIM = `<script>
 })()
 </script>`
 
-const MIME: Record<string, string> = {
-  js: 'application/javascript', css: 'text/css', html: 'text/html', json: 'application/json',
-  png: 'image/png', jpg: 'image/jpeg', svg: 'image/svg+xml', wasm: 'application/wasm',
-}
-
-export function fileBlobUrl(content: string, path: string): string {
-  const ext = (path.split('.').pop() || '').toLowerCase()
-  return URL.createObjectURL(new Blob([content], { type: MIME[ext] ?? 'text/plain' }))
-}
-
 /** Bare (npm) specifiers left external by the bundler → esm.sh import map. */
 function bareImports(js: string): ImportMap {
   const map: ImportMap = { imports: {} }
@@ -73,7 +63,7 @@ export function generatePreviewHtml(project: Project, build: BuildResult): strin
     ? bareImports(build.js)
     : null
   const importsJson = importMap && Object.keys(importMap.imports).length
-    ? `<script type="importmap">${JSON.stringify(importMap)}</script>`
+    ? `<script type="importmap">${JSON.stringify(importMap).replace(/</g, '\\u003c')}</script>`
     : ''
   const lastHead = /<\/head>/i.test(html) ? html.indexOf('</head>') : html.length
   return (

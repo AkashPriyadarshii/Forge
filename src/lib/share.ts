@@ -1,4 +1,5 @@
 import { PROJECT_FORMAT, type Project } from '../types'
+import { isValidPath } from './paths'
 
 // Share snapshot codec: project → {v:1|∆deflate+base64url}#fragment.
 // URL fragments survive refresh, stay out of server logs, and are capped —
@@ -37,7 +38,10 @@ export function toB64Url(bytes: Uint8Array): string {
 }
 
 export function fromB64Url(s: string): Uint8Array {
-  const bin = atob(s.replace(/[-_]/g, c => UNB64URL[c]).padEnd(Math.ceil(s.length / 4) * 4, '='))
+  const sNorm = s.replace(/[-_]/g, c => UNB64URL[c])
+  // padded? no — toB64Url strips padding, so only %4==1 is impossible
+  if (sNorm.length % 4 === 1) throw new Error('corrupt snapshot (bad base64 length)')
+  const bin = atob(sNorm.padEnd(Math.ceil(sNorm.length / 4) * 4, '='))
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
   return bytes
@@ -62,26 +66,29 @@ export async function toShareUrl(p: Project): Promise<string> {
   return url.href
 }
 
-export async function fromShareUrl(urlHashPayload: string): Promise<Project> {
-  return fromShareHash(urlHashPayload)
-}
-
-export async function fromShareHash(hash: string): Promise<Project> {
-  const json = await inflate(fromB64Url(hash))
-  const parsed: unknown = JSON.parse(json)
+export function validateSnapshot(parsed: unknown): SnapshotSchema {
   const snap = parsed as SnapshotSchema
   if (snap.v !== PROJECT_FORMAT || !Array.isArray(snap.files) || typeof snap.name !== 'string') {
     throw new Error('unsupported or corrupt snapshot')
   }
+  if (snap.files.length > 256) throw new Error('too many files in snapshot')
   for (const f of snap.files) {
     if (typeof f.path !== 'string' || typeof f.content !== 'string') throw new Error('corrupt snapshot file entry')
-    if (f.path.includes('..') || f.path.startsWith('/')) throw new Error('unsafe path in snapshot')
-  }
-  if (snap.files.length > 256) throw new Error('too many files in snapshot')
+    if (!isValidPath(f.path)) throw new Error('unsafe path in snapshot')  }
+  return snap
+}
+
+export async function fromShareHash(hash: string): Promise<Project> {
+  const json = await inflate(fromB64Url(hash))
+  const snap = validateSnapshot(JSON.parse(json))
+  return projectFromSnapshot(snap, 'Shared project')
+}
+
+function projectFromSnapshot(snap: SnapshotSchema, fallbackName: string): Project {
   return {
     format: PROJECT_FORMAT,
     id: crypto.randomUUID(),
-    name: snap.name || 'Shared project',
+    name: snap.name || fallbackName,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     files: snap.files.slice(0, 256),
@@ -99,16 +106,5 @@ export function exportProject(p: Project): void {
 }
 
 export function importProjectFile(file: File): Promise<Project> {
-  return file.text().then(text => {
-    const snap = JSON.parse(text) as SnapshotSchema
-    if (snap.v !== PROJECT_FORMAT || !Array.isArray(snap.files)) throw new Error('unsupported project file')
-    return {
-      format: PROJECT_FORMAT,
-      id: crypto.randomUUID(),
-      name: snap.name || 'Imported project',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      files: snap.files.filter(f => typeof f.path === 'string' && typeof f.content === 'string' && !f.path.includes('..')),
-    }
-  })
+  return file.text().then(text => projectFromSnapshot(validateSnapshot(JSON.parse(text)), 'Imported project'))
 }
