@@ -6,15 +6,15 @@ import type { BuildResult } from '../types'
 export class BuildOrchestrator {
   private worker: Worker
   private busy = false
+  private wasmUrl: string
   private nextFiles: Record<string, string> | null = null
   private waiters: ((r: BuildResult) => void)[] = []
 
   constructor() {
     this.worker = new Worker(new URL('../workers/bundler-worker.ts', import.meta.url), { type: 'module' })
     // esbuild-wasm is served from <base>/wasm/ (dev root, prod dist); BASE_URL keeps dev/prod correct
-    const wasmUrl = new URL('wasm/esbuild.wasm', location.origin + import.meta.env.BASE_URL).href
+    this.wasmUrl = new URL('wasm/esbuild.wasm', location.origin + import.meta.env.BASE_URL).href
     this.worker.onerror = e => { console.error('[forge] worker error:', e.message || e); this.busy = false; for (const d of this.waiters.splice(0)) d({ ok: false, js: null, css: null, html: null, diagnostics: [{ path: '', line: 0, column: 0, text: 'worker crashed: ' + (e.message || 'unknown'), severity: 'error' }] }) }
-    this.worker.postMessage({ wasmUrl })
     this.worker.onmessage = (e: MessageEvent<{ result: BuildResult }>) => {
       this.busy = false
       // deliver the current result to waiters BEFORE starting the queued build
@@ -38,6 +38,7 @@ export class BuildOrchestrator {
 
   private run(files: Record<string, string>) {
     this.busy = true
-    this.worker.postMessage({ files })
+    // wasmUrl rides with every build: the init-only message is ignored by the worker
+    this.worker.postMessage({ files, wasmUrl: this.wasmUrl })
   }
 }

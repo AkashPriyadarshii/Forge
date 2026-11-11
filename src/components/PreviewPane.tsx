@@ -20,16 +20,13 @@ export function PreviewPane() {
   const [device, setDevice] = useState<(typeof DEVICES)[number]['id']>('auto')
   const [showErrors, setShowErrors] = useState(true)
 
-  // srcdoc is written imperatively on every rebuild key
+  // srcdoc is written imperatively on every rebuild key; the console bridge
+  // whitelist must track the current iframe element (key={key} remounts it)
   useEffect(() => {
+    ;(window as unknown as { __forgeFrame?: unknown }).__forgeFrame = frame.current
     if (frame.current && html !== null) frame.current.srcdoc = html
-  }, [html, key])
-
-  // console bridge whitelist: the listener trusts only THIS frame's messages
-  useEffect(() => {
-    (window as unknown as { __forgeFrame: unknown }).__forgeFrame = frame.current
     return () => { delete (window as unknown as { __forgeFrame?: unknown }).__forgeFrame }
-  }, [])
+  }, [html, key])
 
   useEffect(() => {
     if (errors?.length) setShowErrors(true)

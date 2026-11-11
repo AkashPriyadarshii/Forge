@@ -437,6 +437,17 @@ function MobilePanes({ pane, setPane }: { pane: 'code' | 'preview' | 'console'; 
   )
 }
 
+function StorageUsage() {
+  const [text, setText] = useState<string | null>(null)
+  useEffect(() => {
+    navigator.storage?.estimate?.().then(e => {
+      if (e.usage != null) setText(`browser storage: ${Math.round(e.usage / 1024)} KB used`)
+    }).catch(() => {})
+  }, [])
+  if (text == null) return null
+  return <div className="mt-2 text-[10px] text-neutral-600 px-1">{text}</div>
+}
+
 function FilesDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const project = useStore(s => s.project)
   const activePath = useStore(s => s.activePath)
@@ -497,6 +508,7 @@ function FilesDrawer({ open, onClose }: { open: boolean; onClose: () => void }) 
           >
             + New file
           </button>
+          <StorageUsage />
         </div>
       </div>
     </div>

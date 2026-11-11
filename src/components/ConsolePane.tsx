@@ -37,7 +37,8 @@ export function useConsoleListener(isActive: boolean) {
     const onMsg = (e: MessageEvent) => {
       const d = e.data as { forge?: string; kind?: string; text?: string; event?: string }
       // trust only the active preview frame — not window.parent or any nested frame
-      if (e.source !== (window as unknown as { __forgeFrame?: MessageEventSource }).__forgeFrame) return
+      const frame = (window as unknown as { __forgeFrame?: HTMLIFrameElement }).__forgeFrame
+      if (!frame || e.source !== frame.contentWindow) return
       if (d?.forge !== 'console') return
       const kind = (d.kind ?? 'log') as ConsoleMsg['kind']
       actions.pushConsole({ kind, text: d.text ?? '', event: d.event as ConsoleMsg['event'] })

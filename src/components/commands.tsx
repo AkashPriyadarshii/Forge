@@ -22,6 +22,7 @@ export function useCommands(): Command[] {
     { id: 'import', label: 'Import project…', run: () => doImport() },
     { id: 'new-project', label: 'New project…', run: () => { if (confirm('Start a new project (current one is saved)?')) actions.newProject() } },
     { id: 'switch-project', label: 'Switch project…', run: () => void switchProject() },
+    { id: 'format', label: 'Format current file', hint: 'Prettier', run: () => void formatFile() },
   ]
   if (project) {
     for (const f of project.files) {
@@ -52,6 +53,17 @@ export async function runBuild() {
     }
     if (result.diagnostics.length === 0) actions.pushConsole({ kind: 'error', text: 'Build produced no JavaScript output' })
   }
+}
+
+async function formatFile() {
+  const { formatCode } = await import('../lib/format')
+  const path = getState().activePath
+  if (!path) return
+  const content = getState().project?.files.find(f => f.path === path)?.content
+  if (content === undefined) return
+  const formatted = await formatCode(path, content)
+  if (formatted === null) actions.pushConsole({ kind: 'warn', text: `No formatter for ${path}` })
+  else if (formatted !== content) actions.editFile(path, formatted)
 }
 
 async function share() {

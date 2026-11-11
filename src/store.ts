@@ -122,7 +122,13 @@ export const actions = {
     persistSoon()
   },
   pushConsole(msg: ConsoleMsg) {
-    set({ consoleLines: [...state.consoleLines.slice(-200), msg] })
+    const lines = state.consoleLines
+    // cap: replace the oldest line with a marker so dropping is visible, never silent
+    if (lines.length >= 200) {
+      set({ consoleLines: [...lines.slice(lines.length - 199), { kind: 'info', text: '…earlier console output truncated' }, msg] })
+      return
+    }
+    set({ consoleLines: [...lines, msg] })
   },
   jumpTo(path: string, line: number, column = 1) {
     actions.openTab(path)

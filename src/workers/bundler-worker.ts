@@ -140,6 +140,7 @@ function collectImportedCss(outputFiles: { path: string; text: string }[] | unde
 
 self.onmessage = async (e: MessageEvent) => {
   const d = e.data as { id?: number; wasmUrl?: string; files?: Record<string, string> }
+  if (!d.files) return // constructor init message { wasmUrl } — not a build
   const result = await buildProject(d.wasmUrl ?? new URL('wasm/esbuild.wasm', location.origin + location.pathname).href, d.files ?? {})
     .catch(err => ({ ok: false, js: null, css: null, html: null, diagnostics: [{ path: '', line: 0, column: 0, text: String(err), severity: 'error' as const }] }))
   ;(self as unknown as Worker).postMessage({ id: d.id, result })

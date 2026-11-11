@@ -13,9 +13,25 @@ const CONSOLE_SHIM = `<script>
       var parts = []
       for (var i = 0; i < arguments.length; i++) {
         var a = arguments[i]
-        try {
-          parts.push(typeof a === 'string' ? a : JSON.stringify(a))
-        } catch (e) { parts.push(String(a)) }
+        var t = typeof a
+        if (t === 'string' || t === 'number' || t === 'boolean') {
+          parts.push(String(a))
+        } else {
+          try {
+            var s = JSON.stringify(a, function (k, v) {
+              if (v === undefined || typeof v === 'function') return '[Function]'
+              if (typeof v === 'bigint') return String(v) + 'n'
+              return v instanceof Error ? String(v.message) : v
+            }, 2)
+            if (s === undefined) {
+              parts.push(String(a))
+            } else {
+              parts.push(s.length > 2000 ? s.slice(0, 2000) + '…' : s)
+            }
+          } catch (e) {
+            parts.push(String(a))
+          }
+        }
       }
       send({ forge: 'console', kind: level, text: parts.join(' ') })
       original.apply(console, arguments)
